@@ -1,0 +1,10 @@
+FROM maven:3.9.6 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests -P consumer
+
+FROM mcr.microsoft.com/openjdk/jdk:21-ubuntu
+COPY --from=build /app/target/azure-eh-kafka-test-consumer.jar /app/target/azure-eh-kafka-test-consumer.jar
+COPY --from=build /app/target/lib /app/target/lib
+CMD java -jar /app/target/azure-eh-kafka-test-consumer.jar
