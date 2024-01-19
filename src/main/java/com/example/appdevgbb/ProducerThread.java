@@ -65,10 +65,8 @@ public class ProducerThread implements Runnable, Callback {
             System.out.println(exception);
         }
         else {
-            _numRecordsSent.incrementAndGet();
-            _totalRecordsSent.incrementAndGet();
-            final int numRecordsSent = _numRecordsSent.get();
-            final long totalRecordsSent = _totalRecordsSent.get();
+            final int numRecordsSent = _numRecordsSent.incrementAndGet();
+            final long totalRecordsSent = _totalRecordsSent.incrementAndGet();
             if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0) {
                 Instant end = Instant.now();
                 System.out.println("Record size: " + _messageSizeInBytes + " bytes. Total records sent: " + totalRecordsSent + ". Total requested sends: " + _totalRequestedSends + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
