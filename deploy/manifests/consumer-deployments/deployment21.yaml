@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name:  testconsumer21
+  namespace: kafka-eh-perf
+  labels:
+    app:  testconsumer21
+spec:
+  selector:
+    matchLabels:
+      app: testconsumer21
+  replicas: 3
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app:  testconsumer21
+    spec:
+      containers:
+      - name:  testconsumer21
+        image:  sofioehtestacr.azurecr.io/azure-eh-kafka-test-consumer:latest
+        resources:
+          limits:
+            cpu: 250m
+            memory: 500Mi
+        env:
+        - name: BOOTSTRAP_SERVER
+          valueFrom:
+            configMapKeyRef:
+              name: eh-config-map
+              key: BOOTSTRAP_SERVER
+        - name: TOPIC_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: eh-config-map
+              key: TOPIC_NAME
+        - name: CONSUMER_GROUP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: eh-config-map
+              key: CONSUMER_GROUP_21
+        - name: SASL_JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: eh-secrets
+              key: SASL_JAAS_CONFIG
+      restartPolicy: Always
