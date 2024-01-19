@@ -10,14 +10,16 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 public class Producer {
 
     private final static int NUM_PRODUCER_THREADS = 1;
-    private final static String TOPIC_NAME = "simple-event-topic";
     private final static int MESSAGE_SIZE_IN_BYTES = System.getenv("MESSAGE_SIZE_IN_BYTES") == null ? 1024 : Integer.parseInt(System.getenv("MESSAGE_SIZE_IN_BYTES"));
     private final static long SLEEP_TIME_MS = System.getenv("SLEEP_TIME_MS") == null ? 0 : Long.parseLong(System.getenv("SLEEP_TIME_MS"));
 
     public static void main(String[] args) {
+        String topicName = getTopicFromEnvironment();
+        System.out.println("Preparing to produce events to the " + topicName + " topic.");
+
         ExecutorService executorService = Executors.newFixedThreadPool(NUM_PRODUCER_THREADS);
         for(int x = 0; x < NUM_PRODUCER_THREADS; x++) {
-            executorService.execute(new ProducerThread(TOPIC_NAME, MESSAGE_SIZE_IN_BYTES, SLEEP_TIME_MS, createProducerConfig()));
+            executorService.execute(new ProducerThread(getTopicFromEnvironment(), MESSAGE_SIZE_IN_BYTES, SLEEP_TIME_MS, createProducerConfig()));
         }
     }
     
@@ -35,5 +37,14 @@ public class Producer {
         }
 
         return props;
+    }
+
+    private static String getTopicFromEnvironment() {
+        String topicName = System.getenv("TOPIC_NAME");
+        if(topicName == null) {
+            System.out.println("You must specify the kafka topic to produce events to using the TOPIC_NAME environment variable.");
+            System.exit(1);
+        }
+        return topicName;
     }
 }

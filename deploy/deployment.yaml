@@ -52,11 +52,21 @@ spec:
           failureThreshold: 3
           periodSeconds: 10
         env:
-        - name: DB_HOST
+        - name: BOOTSTRAP_SERVER
           valueFrom:
             configMapKeyRef:
-              name: TestConsumer1
-              key: DB_HOST
+              name: eh-config
+              key: BOOTSTRAP_SERVER
+        - name: CONSUMER_GROUP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: eh-config
+              key: CONSUMER_GROUP_NAME
+        - name: TOPIC_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: eh-config
+              key: TOPIC_NAME
         ports:
         - containerPort:  80
           name:  TestConsumer1
