@@ -1,9 +1,12 @@
 package com.example.appdevgbb;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 
@@ -12,11 +15,45 @@ public class Consumer {
     private final static int NUM_CONSUMER_GROUP_THREADS = 1;
     private final static int NUM_RECORDS_TO_READ_BEFORE_COMMIT = System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT") == null ? 0 : Integer.parseInt(System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT"));
 
-    public static void main(String[] args) {
-        ExecutorService executorService = Executors.newFixedThreadPool(NUM_CONSUMER_GROUP_THREADS);
+    ExecutorService _executorService;
+    private List<ConsumerThread> _consumerThreads;
+
+    public Consumer() {
+        _consumerThreads = new ArrayList<ConsumerThread>();
+
+        _executorService = Executors.newFixedThreadPool(NUM_CONSUMER_GROUP_THREADS);
+    }
+
+    private void start() {
+        ConsumerThread consumerThread;
         for(int x = 0; x < NUM_CONSUMER_GROUP_THREADS; x++) {
-            executorService.execute(new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, createConsumerConfig()));
+            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, createConsumerConfig());
+            _consumerThreads.add(consumerThread);
+            _executorService.execute(consumerThread);
         }
+    }
+
+    private void stop() {
+        _executorService.shutdown();
+        for(ConsumerThread consumerThread : _consumerThreads) {
+            consumerThread.stop();
+        }
+
+        try {
+            _executorService.awaitTermination(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {}
+    }
+
+    public static void main(String[] args) {
+        Consumer consumer = new Consumer();
+        consumer.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                System.out.println("Shutting down...");
+                consumer.stop();
+            }
+        });
     }
 
     private static Properties createConsumerConfig() {
@@ -25,7 +62,7 @@ public class Consumer {
             props.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
             props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, System.getenv("CONSUMER_GROUP_NAME"));
             props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("BOOTSTRAP_SERVER"));
-            props.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, System.getenv("MAX_POLL_RECORDS") == null ? "1000" : System.getenv("MAX_POLL_RECORDS"));
+            props.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, System.getenv("MAX_POLL_RECORDS") == null ? Integer.toString(ConsumerConfig.DEFAULT_MAX_POLL_RECORDS) : System.getenv("MAX_POLL_RECORDS"));
             props.setProperty("security.protocol", "SASL_SSL");
             props.setProperty("sasl.mechanism", "PLAIN");
             props.setProperty("sasl.jaas.config", System.getenv("SASL_JAAS_CONFIG"));

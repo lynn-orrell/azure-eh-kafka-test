@@ -28,6 +28,8 @@ public class Producer {
         try {
             props.setProperty(ProducerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
             props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("BOOTSTRAP_SERVER"));
+            props.setProperty(ProducerConfig.LINGER_MS_CONFIG, "1");
+            props.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(MESSAGE_SIZE_IN_BYTES * 50));
             props.setProperty("security.protocol", "SASL_SSL");
             props.setProperty("sasl.mechanism", "PLAIN");
             props.setProperty("sasl.jaas.config", System.getenv("SASL_JAAS_CONFIG"));
