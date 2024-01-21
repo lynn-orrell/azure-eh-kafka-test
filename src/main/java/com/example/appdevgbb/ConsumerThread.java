@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 
@@ -22,36 +24,40 @@ import com.fasterxml.jackson.core.type.TypeReference;
 
 public class ConsumerThread implements Runnable, ConsumerRebalanceListener, OffsetCommitCallback {
 
-    private static final int PRINT_AFTER_BATCH_SIZE = 1000;
-
     private String _topicName;
     private int _numRecordsToReadBeforeCommit;
+    private boolean _shouldStartFromEnd;
     private Properties _consumerConfigProps;
     private final Consumer<String, SimpleEvent> _consumer;
     private boolean _isRunning;
+    private Map<TopicPartition, Long> _partitionOffsets;
+    private Instant _start;
+    private long _totalRecordCount;
+    private long _totalEndToEndLatency;
+    private long _totalRecordsCommitted;
 
-    public ConsumerThread(String topicName, int numRecordsToReadBeforeCommit, Properties consumerConfigProps) {
+    public ConsumerThread(String topicName, int numRecordsToReadBeforeCommit, boolean shouldStartFromEnd, Properties consumerConfigProps) {
         _topicName = topicName;
         _numRecordsToReadBeforeCommit = numRecordsToReadBeforeCommit;
+        _shouldStartFromEnd = shouldStartFromEnd;
         _consumerConfigProps = consumerConfigProps;
+        _partitionOffsets = new HashMap<>();
         _consumer = createConsumer();
     }
 
     @Override
     public void run() {
         _isRunning = true;
+        _start = Instant.now();
 
         System.out.println("Subscribing to topic: " + _topicName);
 
         _consumer.subscribe(Collections.singletonList(_topicName), this);
 
-        try {
-            SimpleEvent simpleEvent;
-            long totalEndToEndLatency = 0;
-            int numRecordsForCommit = 0;
-            long totalRecordCount = 0;
-            Instant start = Instant.now();
+        SimpleEvent simpleEvent;
+        int numRecordsForCommit = 0;
 
+        try {
             while (_isRunning) {
                 numRecordsForCommit = 0;
 
@@ -59,18 +65,18 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
                 for (ConsumerRecord<String, SimpleEvent> consumerRecord : records) {
                     simpleEvent = consumerRecord.value();
                     if(simpleEvent != null) {
-                        totalEndToEndLatency += Instant.now().toEpochMilli() - simpleEvent.get_createDate().toEpochMilli();
+                        _totalEndToEndLatency += Instant.now().toEpochMilli() - simpleEvent.get_createDate().toEpochMilli();
                         numRecordsForCommit++;
                     }
                     if (_numRecordsToReadBeforeCommit > 0 && numRecordsForCommit % _numRecordsToReadBeforeCommit == 0) {
                         _consumer.commitAsync(this);
                         numRecordsForCommit = 0;
                     }
-                    totalRecordCount++;
-                    if (totalRecordCount > 0 && totalRecordCount % PRINT_AFTER_BATCH_SIZE == 0) {
-                        System.out.println("Total Record Count [Thread: " + Thread.currentThread().threadId() + "]: " + totalRecordCount + ". Avg end-to-end latency: " + totalEndToEndLatency / totalRecordCount + " ms. Records/sec: " + (PRINT_AFTER_BATCH_SIZE / (Instant.now().toEpochMilli() - start.toEpochMilli() * 1.0) * 1000) + ".");
-                        start = Instant.now();
-                    }
+                    _totalRecordCount++;
+                    // if (_totalRecordCount > 0 && _totalRecordCount % PRINT_AFTER_BATCH_SIZE == 0) {
+                    //     System.out.println("Total Record Count [Thread: " + Thread.currentThread().threadId() + "]: " + _totalRecordCount + ". Avg end-to-end latency: " + _totalEndToEndLatency / _totalRecordCount + " ms. Records/sec: " + (PRINT_AFTER_BATCH_SIZE / (Instant.now().toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000) + ".");
+                    //     _start = Instant.now();
+                    // }
                 }
                 if(numRecordsForCommit > 0) {
                     _consumer.commitAsync(this);
@@ -83,7 +89,13 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
                 System.out.println("Consumer thread [Thread: " + Thread.currentThread().threadId() + "] threw exception: " + e);
             }
         } finally {
-            _consumer.commitAsync();
+            if(numRecordsForCommit > 0) {
+                _consumer.commitAsync(this);
+                Map<TopicPartition, OffsetAndMetadata> offsets = _consumer.committed(new HashSet<>(_consumer.assignment()));
+                for(Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
+                    System.out.println("Committed offset " + entry.getValue().offset() + " for partition " + entry.getKey().partition());
+                }
+            }
             _consumer.close();
         }
     }
@@ -96,7 +108,7 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
     @Override
     public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
         for(TopicPartition tp : partitions) {
-            System.out.println("Revoked Partition on Topic: " + tp.topic() + " - Partition: " + tp.partition());
+            System.out.println("Revoked Partition on Topic: " + tp.topic() + " - Partition: " + tp.partition() + " - Last Committed Offset: " + _consumer.committed(new HashSet<>(Collections.singletonList(tp))).get(tp).offset());
         }
     }
 
@@ -104,8 +116,16 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
     public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
         for(TopicPartition tp : partitions) {
             System.out.println("Assigned Partition on Topic: " + tp.topic() + " - Partition: " + tp.partition());
+            if(_shouldStartFromEnd) {
+                System.out.print("Seeking to end of partition " + tp.partition() + ". ");
+                _consumer.seekToEnd(Collections.singletonList(tp));
+            } else {
+                System.out.print("Resuming last checkpoint of partition " + tp.partition() + ". ");
+            }
+            long position = _consumer.position(tp);
+            _partitionOffsets.put(tp, Long.valueOf(position));
+            System.out.println("Current offset: " + position);
         }
-        _consumer.seekToEnd(partitions);
     }
 
     @Override
@@ -114,9 +134,13 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
             System.out.println(exception);
         }
         else {
+            int numRecordsCommitted = 0;
             for(Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
-                System.out.println("Committed offset " + entry.getValue().offset() + " for partition " + entry.getKey().partition());
+                numRecordsCommitted += entry.getValue().offset() - _partitionOffsets.put(entry.getKey(), entry.getValue().offset());
             }
+            _totalRecordsCommitted += numRecordsCommitted;
+            System.out.println("Total Records Committed [Thread: " + Thread.currentThread().threadId() + "]: " + _totalRecordsCommitted + ". Avg read end-to-end latency: " + _totalEndToEndLatency / _totalRecordCount + " ms. Committed records/sec: " + (numRecordsCommitted / (Instant.now().toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000) + ".");
+            _start = Instant.now();
         }
     }
 

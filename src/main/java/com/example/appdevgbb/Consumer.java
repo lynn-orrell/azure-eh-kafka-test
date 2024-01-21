@@ -14,6 +14,7 @@ public class Consumer {
 
     private final static int NUM_CONSUMER_GROUP_THREADS = 1;
     private final static int NUM_RECORDS_TO_READ_BEFORE_COMMIT = System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT") == null ? 0 : Integer.parseInt(System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT"));
+    private final static boolean SHOULD_START_FROM_END = System.getenv("SHOULD_START_FROM_END") == null ? true : Boolean.parseBoolean(System.getenv("SHOULD_START_FROM_END"));
 
     ExecutorService _executorService;
     private List<ConsumerThread> _consumerThreads;
@@ -27,7 +28,7 @@ public class Consumer {
     private void start() {
         ConsumerThread consumerThread;
         for(int x = 0; x < NUM_CONSUMER_GROUP_THREADS; x++) {
-            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, createConsumerConfig());
+            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, SHOULD_START_FROM_END, createConsumerConfig());
             _consumerThreads.add(consumerThread);
             _executorService.execute(consumerThread);
         }
@@ -63,6 +64,7 @@ public class Consumer {
             props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, System.getenv("CONSUMER_GROUP_NAME"));
             props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("BOOTSTRAP_SERVER"));
             props.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, System.getenv("MAX_POLL_RECORDS") == null ? Integer.toString(ConsumerConfig.DEFAULT_MAX_POLL_RECORDS) : System.getenv("MAX_POLL_RECORDS"));
+            props.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
             props.setProperty("security.protocol", "SASL_SSL");
             props.setProperty("sasl.mechanism", "PLAIN");
             props.setProperty("sasl.jaas.config", System.getenv("SASL_JAAS_CONFIG"));
