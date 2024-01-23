@@ -13,17 +13,18 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
 
-
 public class ProducerThread implements Runnable, Callback {
+
+    private boolean _isRunning;
 
     private String _topicName;
     private int _messageSizeInBytes;
     private long _sleepTimeMs;
-    
+
     private long _totalRequestedSends;
     private AtomicInteger _numRecordsSent;
     private AtomicLong _totalRecordsSent;
-    
+
     private Instant _start;
     private Properties _producerConfigProps;
     private static final int PRINT_AFTER_BATCH_SIZE = 1000;
@@ -39,37 +40,46 @@ public class ProducerThread implements Runnable, Callback {
 
     @Override
     public void run() {
+        _isRunning = true;
+
         final Producer<String, SimpleEvent> producer = createProducer();
 
         _totalRequestedSends = 0;
         _start = Instant.now();
         String message = generateRandomString(_messageSizeInBytes);
-        while (true) {
-            final ProducerRecord<String, SimpleEvent> record = new ProducerRecord<String, SimpleEvent>(_topicName, new SimpleEvent(message));
-            producer.send(record, this);
-            _totalRequestedSends++;
+        try {
+            while (_isRunning) {
+                final ProducerRecord<String, SimpleEvent> record = new ProducerRecord<String, SimpleEvent>(_topicName, new SimpleEvent(message));
+                producer.send(record, this);
+                _totalRequestedSends++;
 
-            if (_sleepTimeMs > 0) {
-                try {
-                    Thread.sleep(_sleepTimeMs);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                if (_sleepTimeMs > 0) {
+                    try {
+                        Thread.sleep(_sleepTimeMs);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
+        } finally {
+            producer.close();
         }
+    }
+
+    public void stop() {
+        _isRunning = false;
     }
 
     @Override
     public void onCompletion(RecordMetadata metadata, Exception exception) {
         if (exception != null) {
             System.out.println(exception);
-        }
-        else {
+        } else {
             final int numRecordsSent = _numRecordsSent.incrementAndGet();
             final long totalRecordsSent = _totalRecordsSent.incrementAndGet();
-            if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0) {
+            if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0 || totalRecordsSent == _totalRequestedSends) {
                 Instant end = Instant.now();
-                System.out.println("Record size: " + _messageSizeInBytes + " bytes. Total records sent: " + totalRecordsSent + ". Total requested sends: " + _totalRequestedSends + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
+                System.out.println("Producer thread [Thread: " + Thread.currentThread().threadId() + "] total records sent: " + totalRecordsSent + ". Total requested sends: " + _totalRequestedSends + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
                 _start = Instant.now();
                 _numRecordsSent.set(0);
             }

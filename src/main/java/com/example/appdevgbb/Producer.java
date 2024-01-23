@@ -1,9 +1,13 @@
 package com.example.appdevgbb;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
 
@@ -13,14 +17,48 @@ public class Producer {
     private final static int MESSAGE_SIZE_IN_BYTES = System.getenv("MESSAGE_SIZE_IN_BYTES") == null ? 1024 : Integer.parseInt(System.getenv("MESSAGE_SIZE_IN_BYTES"));
     private final static long SLEEP_TIME_MS = System.getenv("SLEEP_TIME_MS") == null ? 0 : Long.parseLong(System.getenv("SLEEP_TIME_MS"));
 
-    public static void main(String[] args) {
+    private ExecutorService _executorService;
+    private List<ProducerThread> _producerThreads;
+
+    public Producer() {
+        _producerThreads = new ArrayList<ProducerThread>();
+        _executorService = Executors.newFixedThreadPool(NUM_PRODUCER_THREADS);
+    }
+
+    private void start() {
         String topicName = getTopicFromEnvironment();
         System.out.println("Preparing to produce events to the " + topicName + " topic.");
+        System.out.println("Using " + NUM_PRODUCER_THREADS + " producer threads each producing " + MESSAGE_SIZE_IN_BYTES + " byte messages with a " + SLEEP_TIME_MS + " ms sleep time between sends.");    
 
-        ExecutorService executorService = Executors.newFixedThreadPool(NUM_PRODUCER_THREADS);
+        ProducerThread producerThread;
         for(int x = 0; x < NUM_PRODUCER_THREADS; x++) {
-            executorService.execute(new ProducerThread(getTopicFromEnvironment(), MESSAGE_SIZE_IN_BYTES, SLEEP_TIME_MS, createProducerConfig()));
+            producerThread = new ProducerThread(topicName, MESSAGE_SIZE_IN_BYTES, SLEEP_TIME_MS, createProducerConfig());
+            _producerThreads.add(producerThread);
+            _executorService.execute(producerThread);
         }
+    }
+
+    private void stop() {
+        _executorService.shutdown();
+        for(ProducerThread producerThread : _producerThreads) {
+            producerThread.stop();
+        }
+
+        try {
+            _executorService.awaitTermination(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {}
+    }
+
+    public static void main(String[] args) {
+        Producer producer = new Producer();
+        producer.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                System.out.println("Shutting down...");
+                producer.stop();
+            }
+        });
     }
     
     private static Properties createProducerConfig() {

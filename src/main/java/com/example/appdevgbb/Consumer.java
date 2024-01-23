@@ -17,12 +17,11 @@ public class Consumer {
     private final static boolean SHOULD_START_FROM_END = System.getenv("SHOULD_START_FROM_END") == null ? true : Boolean.parseBoolean(System.getenv("SHOULD_START_FROM_END"));
     private final static int NUM_REQUIRED_RECORDS_FOR_SUMMARY = System.getenv("NUM_REQUIRED_RECORDS_FOR_SUMMARY") == null ? 100000 : Integer.parseInt(System.getenv("NUM_REQUIRED_RECORDS_FOR_SUMMARY"));
 
-    ExecutorService _executorService;
+    private ExecutorService _executorService;
     private List<ConsumerThread> _consumerThreads;
 
     public Consumer() {
         _consumerThreads = new ArrayList<ConsumerThread>();
-
         _executorService = Executors.newFixedThreadPool(NUM_CONSUMER_GROUP_THREADS);
     }
 
