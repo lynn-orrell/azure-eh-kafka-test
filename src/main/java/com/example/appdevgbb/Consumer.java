@@ -78,7 +78,8 @@ public class Consumer {
     }
 
     private static String getTopicFromEnvironment() {
-        String topicName = System.getenv("TOPIC_NAME");
+        //String topicName = System.getenv("TOPIC_NAME");
+        String topicName = "test-topic";
         if(topicName == null) {
             System.out.println("You must specify the kafka topic to consume from using the TOPIC_NAME environment variable.");
             System.exit(1);

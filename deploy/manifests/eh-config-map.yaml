@@ -2,9 +2,10 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: eh-config-map
+  namespace: kafka-eh-perf
 data:
   BOOTSTRAP_SERVER: sofio-ce-eh.servicebus.windows.net:9093
-  TOPIC_NAME: simple-event-topic
+  TOPIC_NAME: cibc-test
   CONSUMER_GROUP_1: cg1
   CONSUMER_GROUP_2: cg2
   CONSUMER_GROUP_3: cg3
