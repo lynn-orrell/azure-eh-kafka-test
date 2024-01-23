@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -72,7 +73,6 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
                         isCommitNeeded = true;
                     }
                     if (_numRecordsToReadBeforeCommit > 0 && (_totalRecordCount > 0 && _totalRecordCount % _numRecordsToReadBeforeCommit == 0)) {
-                        System.out.println("Commiting at offset: " + consumerRecord.offset());
                         _consumer.commitAsync(this);
                         isCommitNeeded = false;
                     }
@@ -91,11 +91,16 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
             }
         } finally {
             if(isCommitNeeded) {
-                _consumer.commitAsync(this);
-                Map<TopicPartition, OffsetAndMetadata> offsets = _consumer.committed(new HashSet<>(_consumer.assignment()));
-                for(Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
-                    System.out.println("Committed offset " + entry.getValue().offset() + " for partition " + entry.getKey().partition());
+                int numRecordsCommitted = 0;
+                Set<TopicPartition> ownedPartitions = _consumer.assignment();
+                for(TopicPartition tp : ownedPartitions) {
+                    _consumer.commitSync(Collections.singletonMap(tp, new OffsetAndMetadata(_consumer.position(tp))));
+                    numRecordsCommitted += _consumer.position(tp) - _partitionOffsets.put(tp, _consumer.position(tp));
+                    System.out.println("Committed offset: " + _consumer.position(tp) + " for partition: " + tp.partition());
                 }
+                _totalRecordsCommitted += numRecordsCommitted;
+
+                printUpdate(numRecordsCommitted);
             }
             _consumer.close();
         }
@@ -140,14 +145,15 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
                 numRecordsCommitted += entry.getValue().offset() - _partitionOffsets.put(entry.getKey(), entry.getValue().offset());
             }
             _totalRecordsCommitted += numRecordsCommitted;
-            double ellapsedMillis = Instant.now().toEpochMilli() - _start.toEpochMilli() * 1.0;
-            System.out.println("Records read before commit: " + _recordsReadBeforeCommit + ". NumRecordsCommited: " + numRecordsCommitted + ". Total Records Committed [Thread: " + Thread.currentThread().threadId() + "]: " + _totalRecordsCommitted + ". Avg read end-to-end latency: " + _totalEndToEndLatency / _totalRecordCount + " ms. Read records/sec: " + (_recordsReadBeforeCommit / ellapsedMillis * 1000) + ". Committed records/sec: " + (numRecordsCommitted / ellapsedMillis * 1000) + ".");
-            if(_totalRecordsCommitted >= _numRequiredRecordsForSummary) {
-                System.out.println("Total Records Committed [Thread: " + Thread.currentThread().threadId() + "]: " + _totalRecordsCommitted + ". Avg read end-to-end latency: " + _totalEndToEndLatency / _totalRecordCount + " ms. Read records/sec: " + (_recordsReadBeforeCommit / ellapsedMillis * 1000) + ". Committed records/sec: " + (numRecordsCommitted / ellapsedMillis * 1000) + ".");
-            }
+            printUpdate(numRecordsCommitted);
             _recordsReadBeforeCommit = 0;
             _start = Instant.now();
         }
+    }
+
+    private void printUpdate(int numRecordsCommitted) {
+        double ellapsedMillis = Instant.now().toEpochMilli() - _start.toEpochMilli() * 1.0;
+        System.out.println("Records read before commit: " + _recordsReadBeforeCommit + ". NumRecordsCommited: " + numRecordsCommitted + ". Total Records Committed [Thread: " + Thread.currentThread().threadId() + "]: " + _totalRecordsCommitted + ". Avg read end-to-end latency: " + _totalEndToEndLatency / _totalRecordCount + " ms. Read records/sec: " + String.format("%.2f", _recordsReadBeforeCommit / ellapsedMillis * 1000) + ". Committed records/sec: " + String.format("%.2f", numRecordsCommitted / ellapsedMillis * 1000) + ".");
     }
 
     private Consumer<String, SimpleEvent> createConsumer() {
