@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -12,16 +13,21 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 
 public class Producer {
 
-    private final static int NUM_PRODUCER_THREADS = 1;
+    private final static int NUM_PRODUCER_THREADS = System.getenv("NUM_PRODUCER_THREADS") == null ? 1 : Integer.parseInt(System.getenv("NUM_PRODUCER_THREADS"));
     private final static int MESSAGE_SIZE_IN_BYTES = System.getenv("MESSAGE_SIZE_IN_BYTES") == null ? 1024 : Integer.parseInt(System.getenv("MESSAGE_SIZE_IN_BYTES"));
     private final static long SLEEP_TIME_MS = System.getenv("SLEEP_TIME_MS") == null ? 0 : Long.parseLong(System.getenv("SLEEP_TIME_MS"));
 
-    private ExecutorService _executorService;
+    private ExecutorService _producersExecutorService;
     private List<ProducerThread> _producerThreads;
+    private ExecutorService _producerMetricsExecutorService;
+    private ProducerMetricsThread _producerMetricsThread;
+    private BlockingQueue<ProducerMetric> _producerMetrics;
 
     public Producer() {
         _producerThreads = new ArrayList<ProducerThread>();
-        _executorService = Executors.newFixedThreadPool(NUM_PRODUCER_THREADS);
+        _producersExecutorService = Executors.newFixedThreadPool(NUM_PRODUCER_THREADS + 1);
+        _producerMetricsExecutorService = Executors.newSingleThreadExecutor();
+        _producerMetrics = new java.util.concurrent.LinkedBlockingQueue<ProducerMetric>();
     }
 
     private void start() {
@@ -31,20 +37,28 @@ public class Producer {
 
         ProducerThread producerThread;
         for(int x = 0; x < NUM_PRODUCER_THREADS; x++) {
-            producerThread = new ProducerThread(topicName, MESSAGE_SIZE_IN_BYTES, SLEEP_TIME_MS, createProducerConfig());
+            producerThread = new ProducerThread(topicName, MESSAGE_SIZE_IN_BYTES, SLEEP_TIME_MS, createProducerConfig(), _producerMetrics);
             _producerThreads.add(producerThread);
-            _executorService.execute(producerThread);
+            _producersExecutorService.execute(producerThread);
         }
+
+        _producerMetricsThread = new ProducerMetricsThread(_producerMetrics);
+        _producerMetricsExecutorService.execute(_producerMetricsThread);
     }
 
     private void stop() {
-        _executorService.shutdown();
+        _producersExecutorService.shutdown();
         for(ProducerThread producerThread : _producerThreads) {
             producerThread.stop();
         }
-
         try {
-            _executorService.awaitTermination(30, TimeUnit.SECONDS);
+            _producersExecutorService.awaitTermination(60, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {}
+
+        _producerMetricsExecutorService.shutdown();
+        _producerMetricsThread.stop();
+        try {
+            _producerMetricsExecutorService.awaitTermination(60, TimeUnit.SECONDS);
         } catch (InterruptedException e) {}
     }
 
@@ -66,7 +80,7 @@ public class Producer {
             props.setProperty(ProducerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
             props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("BOOTSTRAP_SERVER"));
             props.setProperty(ProducerConfig.LINGER_MS_CONFIG, "1");
-            props.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(MESSAGE_SIZE_IN_BYTES * 50));
+            props.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(MESSAGE_SIZE_IN_BYTES * 400));
             props.setProperty("security.protocol", "SASL_SSL");
             props.setProperty("sasl.mechanism", "PLAIN");
             props.setProperty("sasl.jaas.config", System.getenv("SASL_JAAS_CONFIG"));

@@ -1,8 +1,10 @@
 package com.example.appdevgbb;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Properties;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -20,6 +22,7 @@ public class ProducerThread implements Runnable, Callback {
     private String _topicName;
     private int _messageSizeInBytes;
     private long _sleepTimeMs;
+    private BlockingQueue<ProducerMetric> _producerMetrics;
 
     private long _totalRequestedSends;
     private AtomicInteger _numRecordsSent;
@@ -29,11 +32,12 @@ public class ProducerThread implements Runnable, Callback {
     private Properties _producerConfigProps;
     private static final int PRINT_AFTER_BATCH_SIZE = 1000;
 
-    public ProducerThread(String topicName, int messageSizeInBytes, long sleepTimeMs, Properties producerConfigProps) {
+    public ProducerThread(String topicName, int messageSizeInBytes, long sleepTimeMs, Properties producerConfigProps, BlockingQueue<ProducerMetric> producerMetrics) {
         _topicName = topicName;
         _messageSizeInBytes = messageSizeInBytes;
         _sleepTimeMs = sleepTimeMs;
         _producerConfigProps = producerConfigProps;
+        _producerMetrics = producerMetrics;
         _numRecordsSent = new AtomicInteger(0);
         _totalRecordsSent = new AtomicLong(0);
     }
@@ -77,9 +81,12 @@ public class ProducerThread implements Runnable, Callback {
         } else {
             final int numRecordsSent = _numRecordsSent.incrementAndGet();
             final long totalRecordsSent = _totalRecordsSent.incrementAndGet();
-            if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0 || totalRecordsSent == _totalRequestedSends) {
+            if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0 || (!_isRunning && totalRecordsSent == _totalRequestedSends)) {
                 Instant end = Instant.now();
-                System.out.println("Producer thread [Thread: " + Thread.currentThread().threadId() + "] total records sent: " + totalRecordsSent + ". Total requested sends: " + _totalRequestedSends + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
+                Duration duration = Duration.between(_start, end);
+                // System.out.println("Producer thread [Thread: " + Thread.currentThread().threadId() + "] total requested sends: " + _totalRequestedSends + ". Total records sent: " + totalRecordsSent + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
+                ProducerMetric producerMetric = new ProducerMetric(Thread.currentThread().threadId(), _totalRequestedSends, numRecordsSent, duration);
+                _producerMetrics.add(producerMetric);
                 _start = Instant.now();
                 _numRecordsSent.set(0);
             }
