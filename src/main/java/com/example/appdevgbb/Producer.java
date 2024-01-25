@@ -20,7 +20,7 @@ public class Producer {
     private final static Logger LOGGER = LogManager.getLogger(Producer.class);
     private final static int NUM_PRODUCER_THREADS = System.getenv("NUM_PRODUCER_THREADS") == null ? 1 : Integer.parseInt(System.getenv("NUM_PRODUCER_THREADS"));
     private final static int MESSAGE_SIZE_IN_BYTES = System.getenv("MESSAGE_SIZE_IN_BYTES") == null ? 1024 : Integer.parseInt(System.getenv("MESSAGE_SIZE_IN_BYTES"));
-    private final static long SLEEP_TIME_MS = System.getenv("SLEEP_TIME_MS") == null ? 0 : Long.parseLong(System.getenv("SLEEP_TIME_MS"));
+    private final static int TARGET_RECORDS_PER_SECOND = System.getenv("TARGET_RECORDS_PER_SECOND") == null ? Integer.MAX_VALUE : Integer.parseInt(System.getenv("TARGET_RECORDS_PER_SECOND"));
 
     private ExecutorService _producersExecutorService;
     private List<ProducerThread> _producerThreads;
@@ -38,11 +38,11 @@ public class Producer {
     private void start() {
         String topicName = getTopicFromEnvironment();
         LOGGER.info("Preparing to produce events to the " + topicName + " topic.");
-        LOGGER.info("Using " + NUM_PRODUCER_THREADS + " producer threads each producing " + MESSAGE_SIZE_IN_BYTES + " byte messages with a " + SLEEP_TIME_MS + " ms sleep time between sends.");    
+        LOGGER.info("Using " + NUM_PRODUCER_THREADS + " producer threads each producing " + MESSAGE_SIZE_IN_BYTES + " byte messages with a target message rate of " + TARGET_RECORDS_PER_SECOND + " per second.");    
 
         ProducerThread producerThread;
         for(int x = 0; x < NUM_PRODUCER_THREADS; x++) {
-            producerThread = new ProducerThread(topicName, MESSAGE_SIZE_IN_BYTES, SLEEP_TIME_MS, createProducerConfig(), _producerMetrics);
+            producerThread = new ProducerThread(topicName, MESSAGE_SIZE_IN_BYTES, TARGET_RECORDS_PER_SECOND / NUM_PRODUCER_THREADS, createProducerConfig(), _producerMetrics);
             _producerThreads.add(producerThread);
             _producersExecutorService.execute(producerThread);
         }

@@ -20,26 +20,26 @@ import org.apache.logging.log4j.Logger;
 public class ProducerThread implements Runnable, Callback {
 
     private final static Logger LOGGER = LogManager.getLogger(ProducerThread.class);
-    private static final int PRINT_AFTER_BATCH_SIZE = 1000;
+    private static final int PRINT_AFTER_BATCH_SIZE = 75;
 
     private boolean _isRunning;
 
     private String _topicName;
     private int _messageSizeInBytes;
-    private long _sleepTimeMs;
+    private int _targetRecordsPerSecond;
     private BlockingQueue<ProducerMetric> _producerMetrics;
 
     private long _totalRequestedSends;
     private AtomicInteger _numRecordsSent;
     private AtomicLong _totalRecordsSent;
 
-    private Instant _start;
+    private Instant _producerMetricsStart;
     private Properties _producerConfigProps;
 
-    public ProducerThread(String topicName, int messageSizeInBytes, long sleepTimeMs, Properties producerConfigProps, BlockingQueue<ProducerMetric> producerMetrics) {
+    public ProducerThread(String topicName, int messageSizeInBytes, int targetRecordsPerSecond, Properties producerConfigProps, BlockingQueue<ProducerMetric> producerMetrics) {
         _topicName = topicName;
         _messageSizeInBytes = messageSizeInBytes;
-        _sleepTimeMs = sleepTimeMs;
+        _targetRecordsPerSecond = targetRecordsPerSecond;
         _producerConfigProps = producerConfigProps;
         _producerMetrics = producerMetrics;
         _numRecordsSent = new AtomicInteger(0);
@@ -49,21 +49,30 @@ public class ProducerThread implements Runnable, Callback {
     @Override
     public void run() {
         _isRunning = true;
+        Instant recordSetStartTime;
 
         final Producer<String, SimpleEvent> producer = createProducer();
 
         _totalRequestedSends = 0;
-        _start = Instant.now();
+        _producerMetricsStart = Instant.now();
         String message = generateRandomString(_messageSizeInBytes);
         try {
             while (_isRunning) {
-                final ProducerRecord<String, SimpleEvent> record = new ProducerRecord<String, SimpleEvent>(_topicName, new SimpleEvent(message));
-                producer.send(record, this);
-                _totalRequestedSends++;
+                recordSetStartTime = Instant.now();
+                for(int x = 0; x < _targetRecordsPerSecond; x++) {
+                    final ProducerRecord<String, SimpleEvent> record = new ProducerRecord<String, SimpleEvent>(_topicName, new SimpleEvent(message));
+                    producer.send(record, this);
+                    _totalRequestedSends++;
+                    if(!_isRunning) {
+                        break;
+                    }
+                }
 
-                if (_sleepTimeMs > 0) {
+                Instant recordSetEndTime = Instant.now();
+                long sleepTime = 1000 - Duration.between(recordSetStartTime, recordSetEndTime).toMillis();
+                if(sleepTime > 0) {
                     try {
-                        Thread.sleep(_sleepTimeMs);
+                        Thread.sleep(sleepTime);
                     } catch (InterruptedException e) {
                         LOGGER.error("Producer thread was interrupted while sleeping.", e);
                     }
@@ -87,11 +96,11 @@ public class ProducerThread implements Runnable, Callback {
             final long totalRecordsSent = _totalRecordsSent.incrementAndGet();
             if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0 || (!_isRunning && totalRecordsSent == _totalRequestedSends)) {
                 Instant end = Instant.now();
-                Duration duration = Duration.between(_start, end);
+                Duration duration = Duration.between(_producerMetricsStart, end);
                 // LOGGER.info("Total requested sends: " + _totalRequestedSends + ". Total records sent: " + totalRecordsSent + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
                 ProducerMetric producerMetric = new ProducerMetric(Thread.currentThread().threadId(), _totalRequestedSends, numRecordsSent, duration);
                 _producerMetrics.add(producerMetric);
-                _start = Instant.now();
+                _producerMetricsStart = Instant.now();
                 _numRecordsSent.set(0);
             }
         }

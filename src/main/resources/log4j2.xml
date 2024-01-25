@@ -4,14 +4,6 @@
         <Console name="STDOUT" target="SYSTEM_OUT"> 
             <PatternLayout pattern="%style{%d{yyyy-MM-dd HH:mm:ss.SSS}}{black} %highlight{[%level]} %style{[%t] %c{1}}{blue}: %msg%n%throwable" disableAnsi="false" /> 
         </Console>
-        <AzureBlobAppender name="azureblob" 
-                           accountName=""
-                           accountKey=""
-                           containerName=""
-                           prefix1="${env:COMPUTERNAME}"
-                           prefix2="log">
-            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%level] [%t] %c{1}: %msg%n%throwable" />
-        </AzureBlobAppender>
     </Appenders> 
     <Loggers> 
         <!-- <Logger name="org.hibernate.SQL" level="DEBUG"> 
@@ -22,7 +14,6 @@
         </Logger>  -->
         <Root level="info"> 
             <AppenderRef ref="STDOUT"/> 
-            <!-- <AppenderRef ref="azureblob" /> -->
         </Root> 
     </Loggers> 
 </Configuration>
