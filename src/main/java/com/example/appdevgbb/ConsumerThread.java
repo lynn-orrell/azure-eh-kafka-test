@@ -20,6 +20,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -124,8 +125,10 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
 
     @Override
     public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+        OffsetAndMetadata offset;
         for(TopicPartition tp : partitions) {
-            LOGGER.info("Revoked Partition on Topic: " + tp.topic() + " - Partition: " + tp.partition() + " - Last Committed Offset: " + _consumer.committed(new HashSet<>(Collections.singletonList(tp))).get(tp).offset());
+            offset = _consumer.committed(new HashSet<>(Collections.singletonList(tp))).get(tp);
+            LOGGER.info("Revoked Partition on Topic: " + tp.topic() + " - Partition: " + tp.partition() + " - Last Committed Offset: " + offset == null ? "UNKNOWN" : offset.offset());
         }
     }
 
