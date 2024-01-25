@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -32,7 +33,7 @@ public class Producer {
         _producerThreads = new ArrayList<ProducerThread>();
         _producersExecutorService = Executors.newFixedThreadPool(NUM_PRODUCER_THREADS + 1);
         _producerMetricsExecutorService = Executors.newSingleThreadExecutor();
-        _producerMetrics = new java.util.concurrent.LinkedBlockingQueue<ProducerMetric>();
+        _producerMetrics = new LinkedBlockingQueue<ProducerMetric>();
     }
 
     private void start() {

@@ -20,7 +20,7 @@ import org.apache.logging.log4j.Logger;
 public class ProducerThread implements Runnable, Callback {
 
     private final static Logger LOGGER = LogManager.getLogger(ProducerThread.class);
-    private static final int PRINT_AFTER_BATCH_SIZE = 75;
+    private static final int PRINT_AFTER_BATCH_SIZE = 77;
 
     private boolean _isRunning;
 
@@ -31,8 +31,7 @@ public class ProducerThread implements Runnable, Callback {
 
     private long _totalRequestedSends;
     private AtomicInteger _numRecordsSent;
-    private AtomicLong _totalRecordsSent;
-
+    
     private Instant _producerMetricsStart;
     private Properties _producerConfigProps;
 
@@ -43,7 +42,6 @@ public class ProducerThread implements Runnable, Callback {
         _producerConfigProps = producerConfigProps;
         _producerMetrics = producerMetrics;
         _numRecordsSent = new AtomicInteger(0);
-        _totalRecordsSent = new AtomicLong(0);
     }
 
     @Override
@@ -59,27 +57,30 @@ public class ProducerThread implements Runnable, Callback {
         try {
             while (_isRunning) {
                 recordSetStartTime = Instant.now();
-                for(int x = 0; x < _targetRecordsPerSecond; x++) {
+                for(int x = 0; x < (_targetRecordsPerSecond == Integer.MAX_VALUE ? 1 : _targetRecordsPerSecond); x++) {
                     final ProducerRecord<String, SimpleEvent> record = new ProducerRecord<String, SimpleEvent>(_topicName, new SimpleEvent(message));
                     producer.send(record, this);
                     _totalRequestedSends++;
-                    if(!_isRunning) {
-                        break;
-                    }
                 }
 
-                Instant recordSetEndTime = Instant.now();
-                long sleepTime = 1000 - Duration.between(recordSetStartTime, recordSetEndTime).toMillis();
-                if(sleepTime > 0) {
-                    try {
-                        Thread.sleep(sleepTime);
-                    } catch (InterruptedException e) {
-                        LOGGER.error("Producer thread was interrupted while sleeping.", e);
+                if(_targetRecordsPerSecond != Integer.MAX_VALUE) {
+                    Instant recordSetEndTime = Instant.now();
+                    long sleepTime = 1000 - Duration.between(recordSetStartTime, recordSetEndTime).toMillis();
+                    if(sleepTime > 0) {
+                        try {
+                            Thread.sleep(sleepTime);
+                        } catch (InterruptedException e) {
+                            LOGGER.error("Producer thread was interrupted while sleeping.", e);
+                        }
                     }
                 }
             }
         } finally {
             producer.close();
+            if(_numRecordsSent.get() > 0) {
+                LOGGER.info(_numRecordsSent.get());
+                sendMetric();
+            }
         }
     }
 
@@ -93,13 +94,8 @@ public class ProducerThread implements Runnable, Callback {
             LOGGER.error("An error occurred during publish.", exception);
         } else {
             final int numRecordsSent = _numRecordsSent.incrementAndGet();
-            final long totalRecordsSent = _totalRecordsSent.incrementAndGet();
-            if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0 || (!_isRunning && totalRecordsSent == _totalRequestedSends)) {
-                Instant end = Instant.now();
-                Duration duration = Duration.between(_producerMetricsStart, end);
-                // LOGGER.info("Total requested sends: " + _totalRequestedSends + ". Total records sent: " + totalRecordsSent + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
-                ProducerMetric producerMetric = new ProducerMetric(Thread.currentThread().threadId(), _totalRequestedSends, numRecordsSent, duration);
-                _producerMetrics.add(producerMetric);
+            if (numRecordsSent % _targetRecordsPerSecond == 0 || !_isRunning) {
+                sendMetric();
                 _producerMetricsStart = Instant.now();
                 _numRecordsSent.set(0);
             }
@@ -108,6 +104,13 @@ public class ProducerThread implements Runnable, Callback {
 
     private Producer<String, SimpleEvent> createProducer() {
         return new KafkaProducer<>(_producerConfigProps, new StringSerializer(), new JsonSerializer<SimpleEvent>());
+    }
+
+    private void sendMetric() {
+        Instant end = Instant.now();
+        Duration duration = Duration.between(_producerMetricsStart, end);
+        ProducerMetric producerMetric = new ProducerMetric(Thread.currentThread().threadId(), _totalRequestedSends, _numRecordsSent.get(), duration);
+        _producerMetrics.add(producerMetric);
     }
 
     private String generateRandomString(int length) {

@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -17,35 +19,49 @@ import org.apache.logging.log4j.core.config.Configurator;
 public class Consumer {
 
     private final static Logger LOGGER = LogManager.getLogger(Consumer.class);
-    private final static int NUM_CONSUMER_GROUP_THREADS = 10;
+    private final static int NUM_CONSUMER_GROUP_THREADS = System.getenv("NUM_CONSUMER_GROUP_THREADS") == null ? 1 : Integer.parseInt(System.getenv("NUM_CONSUMER_GROUP_THREADS"));
     private final static int NUM_RECORDS_TO_READ_BEFORE_COMMIT = System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT") == null ? 0 : Integer.parseInt(System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT"));
     private final static boolean SHOULD_START_FROM_END = System.getenv("SHOULD_START_FROM_END") == null ? true : Boolean.parseBoolean(System.getenv("SHOULD_START_FROM_END"));
 
-    private ExecutorService _executorService;
+    private ExecutorService _consumersExecutorService;
     private List<ConsumerThread> _consumerThreads;
+    private ExecutorService _consumerMetricsExecutorService;
+    private ConsumerMetricsThread _consumerMetricsThread;
+    private BlockingQueue<ConsumerMetric> _consumerMetrics;
 
     public Consumer() {
         _consumerThreads = new ArrayList<ConsumerThread>();
-        _executorService = Executors.newFixedThreadPool(NUM_CONSUMER_GROUP_THREADS);
+        _consumersExecutorService = Executors.newFixedThreadPool(NUM_CONSUMER_GROUP_THREADS);
+        _consumerMetricsExecutorService = Executors.newSingleThreadExecutor();
+        _consumerMetrics = new LinkedBlockingQueue<ConsumerMetric>();
     }
 
     private void start() {
         ConsumerThread consumerThread;
         for(int x = 0; x < NUM_CONSUMER_GROUP_THREADS; x++) {
-            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, SHOULD_START_FROM_END, createConsumerConfig());
+            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, SHOULD_START_FROM_END, createConsumerConfig(), _consumerMetrics);
             _consumerThreads.add(consumerThread);
-            _executorService.execute(consumerThread);
+            _consumersExecutorService.execute(consumerThread);
         }
+
+        _consumerMetricsThread = new ConsumerMetricsThread(_consumerMetrics);
+        _consumerMetricsExecutorService.execute(_consumerMetricsThread);
     }
 
     private void stop() {
-        _executorService.shutdown();
+        _consumersExecutorService.shutdown();
         for(ConsumerThread consumerThread : _consumerThreads) {
             consumerThread.stop();
         }
 
+        _consumerMetricsExecutorService.shutdown();
+        _consumerMetricsThread.stop();
         try {
-            _executorService.awaitTermination(30, TimeUnit.SECONDS);
+            _consumerMetricsExecutorService.awaitTermination(60, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {}
+
+        try {
+            _consumersExecutorService.awaitTermination(60, TimeUnit.SECONDS);
         } catch (InterruptedException e) {}
 
         if( LogManager.getContext() instanceof LoggerContext ) {
