@@ -65,7 +65,7 @@ public class ProducerThread implements Runnable, Callback {
                     try {
                         Thread.sleep(_sleepTimeMs);
                     } catch (InterruptedException e) {
-                        LOGGER.error("Producer thread [Thread: " + Thread.currentThread().threadId() + "] was interrupted while sleeping.", e);
+                        LOGGER.error("Producer thread was interrupted while sleeping.", e);
                     }
                 }
             }
@@ -81,14 +81,14 @@ public class ProducerThread implements Runnable, Callback {
     @Override
     public void onCompletion(RecordMetadata metadata, Exception exception) {
         if (exception != null) {
-            System.out.println(exception);
+            LOGGER.error("An error occurred during publish.", exception);
         } else {
             final int numRecordsSent = _numRecordsSent.incrementAndGet();
             final long totalRecordsSent = _totalRecordsSent.incrementAndGet();
             if (numRecordsSent % PRINT_AFTER_BATCH_SIZE == 0 || (!_isRunning && totalRecordsSent == _totalRequestedSends)) {
                 Instant end = Instant.now();
                 Duration duration = Duration.between(_start, end);
-                // System.out.println("Producer thread [Thread: " + Thread.currentThread().threadId() + "] total requested sends: " + _totalRequestedSends + ". Total records sent: " + totalRecordsSent + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
+                // LOGGER.info("Total requested sends: " + _totalRequestedSends + ". Total records sent: " + totalRecordsSent + ". Records/sec: " + (numRecordsSent / (end.toEpochMilli() - _start.toEpochMilli() * 1.0) * 1000));
                 ProducerMetric producerMetric = new ProducerMetric(Thread.currentThread().threadId(), _totalRequestedSends, numRecordsSent, duration);
                 _producerMetrics.add(producerMetric);
                 _start = Instant.now();

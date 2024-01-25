@@ -9,13 +9,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.Configurator;
 
 public class Consumer {
 
-    private final static int NUM_CONSUMER_GROUP_THREADS = 1;
+    private final static Logger LOGGER = LogManager.getLogger(Consumer.class);
+    private final static int NUM_CONSUMER_GROUP_THREADS = 10;
     private final static int NUM_RECORDS_TO_READ_BEFORE_COMMIT = System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT") == null ? 0 : Integer.parseInt(System.getenv("NUM_RECORDS_TO_READ_BEFORE_COMMIT"));
     private final static boolean SHOULD_START_FROM_END = System.getenv("SHOULD_START_FROM_END") == null ? true : Boolean.parseBoolean(System.getenv("SHOULD_START_FROM_END"));
-    private final static int NUM_REQUIRED_RECORDS_FOR_SUMMARY = System.getenv("NUM_REQUIRED_RECORDS_FOR_SUMMARY") == null ? 100000 : Integer.parseInt(System.getenv("NUM_REQUIRED_RECORDS_FOR_SUMMARY"));
 
     private ExecutorService _executorService;
     private List<ConsumerThread> _consumerThreads;
@@ -28,7 +32,7 @@ public class Consumer {
     private void start() {
         ConsumerThread consumerThread;
         for(int x = 0; x < NUM_CONSUMER_GROUP_THREADS; x++) {
-            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, SHOULD_START_FROM_END, NUM_REQUIRED_RECORDS_FOR_SUMMARY, createConsumerConfig());
+            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, SHOULD_START_FROM_END, createConsumerConfig());
             _consumerThreads.add(consumerThread);
             _executorService.execute(consumerThread);
         }
@@ -43,6 +47,15 @@ public class Consumer {
         try {
             _executorService.awaitTermination(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {}
+
+        if( LogManager.getContext() instanceof LoggerContext ) {
+                LOGGER.debug("Shutting down log4j2");
+                Configurator.shutdown((LoggerContext)LogManager.getContext());
+        } else {
+            LOGGER.warn("Unable to shutdown log4j2");
+        }
+
+        LOGGER.info("Shutdown complete.");
     }
 
     public static void main(String[] args) {
@@ -51,7 +64,7 @@ public class Consumer {
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
             public void run() {
-                System.out.println("Shutting down...");
+                LOGGER.info("Shutting down...");
                 consumer.stop();
             }
         });
@@ -70,7 +83,7 @@ public class Consumer {
             props.setProperty("sasl.mechanism", "PLAIN");
             props.setProperty("sasl.jaas.config", System.getenv("SASL_JAAS_CONFIG"));
         } catch (Exception e) {
-            System.out.println("The following environment variables must be set: BOOTSTRAP_SERVER, SASL_JAAS_CONFIG, CONSUMER_GROUP_NAME");
+            LOGGER.error("The following environment variables must be set: BOOTSTRAP_SERVER, SASL_JAAS_CONFIG, CONSUMER_GROUP_NAME");
             System.exit(1);
         }
 
@@ -80,7 +93,7 @@ public class Consumer {
     private static String getTopicFromEnvironment() {
         String topicName = System.getenv("TOPIC_NAME");
         if(topicName == null) {
-            System.out.println("You must specify the kafka topic to consume from using the TOPIC_NAME environment variable.");
+            LOGGER.error("You must specify the kafka topic to consume from using the TOPIC_NAME environment variable.");
             System.exit(1);
         }
         return topicName;

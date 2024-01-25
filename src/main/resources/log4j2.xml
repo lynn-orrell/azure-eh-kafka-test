@@ -5,9 +5,9 @@
             <PatternLayout pattern="%style{%d{yyyy-MM-dd HH:mm:ss.SSS}}{black} %highlight{[%level]} %style{[%t] %c{1}}{blue}: %msg%n%throwable" disableAnsi="false" /> 
         </Console>
         <AzureBlobAppender name="azureblob" 
-                           accountName="azurekafkaehtest"
-                           accountKey="8e4NhMFAYOk0RAVZrt9GHkV9WaVF/0sNCMs9jlon3Kx2r4FAgaKZ0ZHuKDmg7Ufxsw4NM+MQ7X2f+AStGJnVng=="
-                           containerName="eh-perf-logs"
+                           accountName=""
+                           accountKey=""
+                           containerName=""
                            prefix1="${env:COMPUTERNAME}"
                            prefix2="log">
             <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%level] [%t] %c{1}: %msg%n%throwable" />
