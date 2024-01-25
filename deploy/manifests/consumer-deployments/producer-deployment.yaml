@@ -1,15 +1,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name:  testconsumer12
+  name:  testproducer1
   namespace: kafka-eh-perf
   labels:
-    app:  testconsumer12
+    app:  testproducer1
 spec:
   selector:
     matchLabels:
-      app: testconsumer12
-  replicas: 3
+      app: testproducer1
+  replicas: 1
   strategy:
     rollingUpdate:
       maxSurge: 25%
@@ -18,11 +18,11 @@ spec:
   template:
     metadata:
       labels:
-        app:  testconsumer12
+        app:  testproducer1
     spec:
       containers:
-      - name:  testconsumer12
-        image:  sofioehtestacr.azurecr.io/azure-eh-kafka-test-consumer:latest
+      - name:  testproducer1
+        image:  sofioehtestacr.azurecr.io/azure-eh-kafka-test-producer:latest
         resources:
           limits:
             cpu: 250m
@@ -38,11 +38,21 @@ spec:
             configMapKeyRef:
               name: eh-config-map
               key: TOPIC_NAME
-        - name: CONSUMER_GROUP_NAME
+        - name: NUM_PRODUCER_THREADS
           valueFrom:
             configMapKeyRef:
               name: eh-config-map
-              key: CONSUMER_GROUP_12
+              key: NUM_PRODUCER_THREADS
+        - name: MESSAGE_SIZE_IN_BYTES
+          valueFrom:
+            configMapKeyRef:
+              name: eh-config-map
+              key: MESSAGE_SIZE_IN_BYTES
+        - name: TARGET_RECORDS_PER_SECOND
+          valueFrom:
+            configMapKeyRef:
+              name: eh-config-map
+              key: TARGET_RECORDS_PER_SECOND
         - name: SASL_JAAS_CONFIG
           valueFrom:
             secretKeyRef:
