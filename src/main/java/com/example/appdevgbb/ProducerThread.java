@@ -14,8 +14,13 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class ProducerThread implements Runnable, Callback {
+
+    private final static Logger LOGGER = LogManager.getLogger(ProducerThread.class);
+    private static final int PRINT_AFTER_BATCH_SIZE = 1000;
 
     private boolean _isRunning;
 
@@ -30,7 +35,6 @@ public class ProducerThread implements Runnable, Callback {
 
     private Instant _start;
     private Properties _producerConfigProps;
-    private static final int PRINT_AFTER_BATCH_SIZE = 1000;
 
     public ProducerThread(String topicName, int messageSizeInBytes, long sleepTimeMs, Properties producerConfigProps, BlockingQueue<ProducerMetric> producerMetrics) {
         _topicName = topicName;
@@ -61,7 +65,7 @@ public class ProducerThread implements Runnable, Callback {
                     try {
                         Thread.sleep(_sleepTimeMs);
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        LOGGER.error("Producer thread [Thread: " + Thread.currentThread().threadId() + "] was interrupted while sleeping.", e);
                     }
                 }
             }

@@ -7,7 +7,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 public class ProducerMetricsThread implements Runnable {
+
+    private final static Logger LOGGER = LogManager.getLogger(ProducerMetricsThread.class);
 
     private boolean _isRunning;
     private BlockingQueue<ProducerMetric> _producerMetrics;
@@ -55,7 +60,7 @@ public class ProducerMetricsThread implements Runnable {
                 }
                 
 
-                System.out.println("Total requested sends: " + totalRequestedSends + ", total records sent: " + totalRecordsSent + ", total time: " + totalDuration.toMillis() + " ms, records per second per thread: " + String.format("%.2f", totalRecordsSent / (totalDuration.toMillis() / 1000.0)) + ", records per second total: " + String.format("%.2f", totalRecordsSent / (totalDuration.toMillis() / 1000.0) * producerMetricsByThreadId.keySet().size()));
+                LOGGER.info("Total requested sends: " + totalRequestedSends + ", total records sent: " + totalRecordsSent + ", total time: " + totalDuration.toMillis() + " ms, records per second per thread: " + String.format("%.2f", totalRecordsSent / (totalDuration.toMillis() / 1000.0)) + ", records per second total: " + String.format("%.2f", totalRecordsSent / (totalDuration.toMillis() / 1000.0) * producerMetricsByThreadId.keySet().size()));
 
                 producerMetrics.clear();
             }
