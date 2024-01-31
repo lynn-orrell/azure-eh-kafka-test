@@ -7,6 +7,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -27,8 +28,9 @@ public class ProducerMetricsThread {
     }
     
     public void start() {
+        LOGGER.info("Producer Metrics (across all threads)");
+        LOGGER.info("------------------------------------------");
         _future = _scheduledExecutorService.scheduleAtFixedRate(() -> printMetrics(), 5, 5, java.util.concurrent.TimeUnit.SECONDS);
-        LOGGER.info("ProducerMetricsThread started: " + _future.state());
     }
     
     public void stop() {
@@ -41,34 +43,45 @@ public class ProducerMetricsThread {
         }
 
         printMetrics();
+        printFinalMetrics();
     }
 
     private void printMetrics() {
         double totalRecordSendTotal = 0;
         double totalRecordSendRate = 0;
+        double totalRecordQueueTimeAverage = 0;
+        double totalRecordsPerRequestAverage = 0;
+
         for (ProducerThread producerThread : _producerThreads) {
             Map<MetricName, ? extends org.apache.kafka.common.Metric> metrics = producerThread.getMetrics();
             totalRecordSendTotal += getRecordSendTotal(metrics);
             totalRecordSendRate += getRecordSendRate(metrics);
-            // for (MetricName metricName : metrics.keySet()) {
-            //     LOGGER.info(metricName.name() + ": " + metrics.get(metricName).metricValue());
-            //     for (Map.Entry<String, String> tag : metricName.tags().entrySet()) {
-            //         LOGGER.info("    " + tag.getKey() + ": " + tag.getValue());
-            //     }
-            // }
+            totalRecordQueueTimeAverage += getRecordQueueTimeAverage(metrics);
+            totalRecordsPerRequestAverage += getRecordsPerRequestAverage(metrics);
         }
 
-        LOGGER.info("Producer metrics: " + totalRecordSendTotal + " records sent total, " + totalRecordSendRate + " records sent per second.");
+        LOGGER.info("record-send-total:                " + Math.round(totalRecordSendTotal));
+        LOGGER.info("record-send-rate:                 " + String.format("%.2f", totalRecordSendRate));
+        LOGGER.info("record-queue-time-average (pt):   " + String.format("%.2f", totalRecordQueueTimeAverage / _producerThreads.size()));
+        LOGGER.info("records-per-request-average (pt): " + String.format("%.2f", totalRecordsPerRequestAverage / _producerThreads.size()));
+        LOGGER.info("------------------------------------------");
+    }
+
+    private void printFinalMetrics() {
+        double totalRequestLatencyAverage = 0;
+
+        for (ProducerThread producerThread : _producerThreads) {
+            Map<MetricName, ? extends org.apache.kafka.common.Metric> metrics = producerThread.getMetrics();
+            totalRequestLatencyAverage += getRequestLatencyAverage(metrics);
+        }
+
+        LOGGER.info("request-latency-average:     " + String.format("%.2f", totalRequestLatencyAverage));
     }
 
     private double getRecordSendTotal(Map<MetricName, ? extends org.apache.kafka.common.Metric> metrics) {
         for (MetricName metricName : metrics.keySet()) {
             if (metricName.name().equals("record-send-total") && !metricName.tags().containsKey("topic")) {
                 return (double)metrics.get(metricName).metricValue();
-                // LOGGER.info(metricName.name() + ": " + metrics.get(metricName).metricValue());
-                // for (Map.Entry<String, String> tag : metricName.tags().entrySet()) {
-                //     LOGGER.info("    " + tag.getKey() + ": " + tag.getValue());
-                // }
             }
         }
 
@@ -79,10 +92,36 @@ public class ProducerMetricsThread {
         for (MetricName metricName : metrics.keySet()) {
             if (metricName.name().equals("record-send-rate") && !metricName.tags().containsKey("topic")) {
                 return (double)metrics.get(metricName).metricValue();
-                // LOGGER.info(metricName.name() + ": " + metrics.get(metricName).metricValue());
-                // for (Map.Entry<String, String> tag : metricName.tags().entrySet()) {
-                //     LOGGER.info("    " + tag.getKey() + ": " + tag.getValue());
-                // }
+            }
+        }
+
+        return 0;
+    }
+
+    private double getRecordQueueTimeAverage(Map<MetricName, ? extends Metric> metrics) {
+        for (MetricName metricName : metrics.keySet()) {
+            if (metricName.name().equals("record-queue-time-avg") && !metricName.tags().containsKey("topic")) {
+                return (double)metrics.get(metricName).metricValue();
+            }
+        }
+
+        return 0;
+    }
+
+    private double getRecordsPerRequestAverage(Map<MetricName, ? extends Metric> metrics) {
+        for (MetricName metricName : metrics.keySet()) {
+            if (metricName.name().equals("records-per-request-avg") && !metricName.tags().containsKey("topic")) {
+                return (double)metrics.get(metricName).metricValue();
+            }
+        }
+
+        return 0;
+    }
+
+    private double getRequestLatencyAverage(Map<MetricName, ? extends Metric> metrics) {
+        for (MetricName metricName : metrics.keySet()) {
+            if (metricName.name().equals("request-latency-avg") && !metricName.tags().containsKey("topic")) {
+                return (double)metrics.get(metricName).metricValue();
             }
         }
 

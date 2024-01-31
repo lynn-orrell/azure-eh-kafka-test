@@ -3,11 +3,8 @@ package com.example.appdevgbb;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -25,27 +22,23 @@ public class Consumer {
 
     private ExecutorService _consumersExecutorService;
     private List<ConsumerThread> _consumerThreads;
-    private ExecutorService _consumerMetricsExecutorService;
     private ConsumerMetricsThread _consumerMetricsThread;
-    private BlockingQueue<ConsumerMetric> _consumerMetrics;
 
     public Consumer() {
         _consumerThreads = new ArrayList<ConsumerThread>();
         _consumersExecutorService = Executors.newFixedThreadPool(NUM_CONSUMER_GROUP_THREADS);
-        _consumerMetricsExecutorService = Executors.newSingleThreadExecutor();
-        _consumerMetrics = new LinkedBlockingQueue<ConsumerMetric>();
     }
 
     private void start() {
         ConsumerThread consumerThread;
         for(int x = 0; x < NUM_CONSUMER_GROUP_THREADS; x++) {
-            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, SHOULD_START_FROM_END, createConsumerConfig(), _consumerMetrics);
+            consumerThread = new ConsumerThread(getTopicFromEnvironment(), NUM_RECORDS_TO_READ_BEFORE_COMMIT, SHOULD_START_FROM_END, createConsumerConfig());
             _consumerThreads.add(consumerThread);
             _consumersExecutorService.execute(consumerThread);
         }
 
-        _consumerMetricsThread = new ConsumerMetricsThread(_consumerMetrics);
-        _consumerMetricsExecutorService.execute(_consumerMetricsThread);
+        _consumerMetricsThread = new ConsumerMetricsThread(_consumerThreads);
+        _consumerMetricsThread.start();
     }
 
     private void stop() {
@@ -54,15 +47,11 @@ public class Consumer {
             consumerThread.stop();
         }
 
-        _consumerMetricsExecutorService.shutdown();
-        _consumerMetricsThread.stop();
-        try {
-            _consumerMetricsExecutorService.awaitTermination(60, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {}
-
         try {
             _consumersExecutorService.awaitTermination(60, TimeUnit.SECONDS);
         } catch (InterruptedException e) {}
+
+        _consumerMetricsThread.stop();
 
         if( LogManager.getContext() instanceof LoggerContext ) {
                 LOGGER.debug("Shutting down log4j2");
@@ -89,7 +78,7 @@ public class Consumer {
     private static Properties createConsumerConfig() {
         Properties props = new Properties();
         try {
-            props.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
+            // props.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
             props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, System.getenv("CONSUMER_GROUP_NAME"));
             props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("BOOTSTRAP_SERVER"));
             props.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, System.getenv("MAX_POLL_RECORDS") == null ? Integer.toString(ConsumerConfig.DEFAULT_MAX_POLL_RECORDS) : System.getenv("MAX_POLL_RECORDS"));

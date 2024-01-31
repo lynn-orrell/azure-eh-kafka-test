@@ -9,7 +9,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.BlockingQueue;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -18,6 +17,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
+import org.apache.kafka.common.Metric;
+import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -34,22 +35,18 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
     private int _numRecordsToReadBeforeCommit;
     private boolean _shouldStartFromEnd;
     private Properties _consumerConfigProps;
-    private BlockingQueue<ConsumerMetric> _consumerMetrics;
+
     private final Consumer<String, SimpleEvent> _consumer;
     private boolean _isRunning;
     private Map<TopicPartition, Long> _partitionOffsets;
-    private Instant _start;
-    private long _recordsReadBeforeCommit;
-    private long _totalRecordsRead;
-    private long _totalEndToEndLatency;
-    private long _totalRecordsCommitted;
+    private long _sumLatencyRecordsRead;
+    private long _sumEndToEndLatency;
 
-    public ConsumerThread(String topicName, int numRecordsToReadBeforeCommit, boolean shouldStartFromEnd, Properties consumerConfigProps, BlockingQueue<ConsumerMetric> consumerMetrics) {
+    public ConsumerThread(String topicName, int numRecordsToReadBeforeCommit, boolean shouldStartFromEnd, Properties consumerConfigProps) {
         _topicName = topicName;
         _numRecordsToReadBeforeCommit = numRecordsToReadBeforeCommit;
         _shouldStartFromEnd = shouldStartFromEnd;
         _consumerConfigProps = consumerConfigProps;
-        _consumerMetrics = consumerMetrics;
         _partitionOffsets = new HashMap<>();
         _consumer = createConsumer();
     }
@@ -57,15 +54,12 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
     @Override
     public void run() {
         _isRunning = true;
-        _start = Instant.now();
-
-        LOGGER.info("Subscribing to topic: " + _topicName);
-
-        _consumer.subscribe(Collections.singletonList(_topicName), this);
 
         SimpleEvent simpleEvent;
-        boolean isCommitNeeded = false;
         long numRecordsReadForPoll = 0;
+
+        LOGGER.info("Subscribing to topic: " + _topicName);
+        _consumer.subscribe(Collections.singletonList(_topicName), this);
 
         try {
             while (_isRunning) {
@@ -75,20 +69,13 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
                     simpleEvent = consumerRecord.value();
                     consumerRecord.partition();
                     if(simpleEvent != null) {
-                        _totalEndToEndLatency += Instant.now().toEpochMilli() - simpleEvent.get_createDate().toEpochMilli();
-                        isCommitNeeded = true;
+                        _sumEndToEndLatency += Instant.now().toEpochMilli() - simpleEvent.get_createDate().toEpochMilli();
+                        _sumLatencyRecordsRead++;
                     }
-                    if (_numRecordsToReadBeforeCommit > 0 && (_totalRecordsRead > 0 && _totalRecordsRead % _numRecordsToReadBeforeCommit == 0)) {
+                    if (_numRecordsToReadBeforeCommit > 0 && (_sumLatencyRecordsRead > 0 && _sumLatencyRecordsRead % _numRecordsToReadBeforeCommit == 0)) {
                         _consumer.commitAsync(this);
-                        isCommitNeeded = false;
                     }
-                    _totalRecordsRead++;
-                    _recordsReadBeforeCommit++;
                     numRecordsReadForPoll++;
-
-                    if (_totalRecordsRead % 10000 == 0) {
-                        LOGGER.info("latency: " + (Instant.now().toEpochMilli() - simpleEvent.get_createDate().toEpochMilli()));
-                    }
                 }
                 if (_numRecordsToReadBeforeCommit == 0 && numRecordsReadForPoll > 0) {
                     _consumer.commitAsync(this);
@@ -101,18 +88,12 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
                 LOGGER.error("Consumer thread threw exception: " + e);
             }
         } finally {
-            /*if(isCommitNeeded)*/ {
-                int numRecordsCommitted = 0;
-                Set<TopicPartition> ownedPartitions = _consumer.assignment();
-                for(TopicPartition tp : ownedPartitions) {
-                    _consumer.commitSync(Collections.singletonMap(tp, new OffsetAndMetadata(_consumer.position(tp))));
-                    numRecordsCommitted += _consumer.position(tp) - _partitionOffsets.put(tp, _consumer.position(tp));
-                    LOGGER.info("Committed offset: " + _consumer.position(tp) + " for partition: " + tp.partition());
-                }
-                _totalRecordsCommitted += numRecordsCommitted;
-
-                printUpdate(numRecordsCommitted);
+            Set<TopicPartition> ownedPartitions = _consumer.assignment();
+            for(TopicPartition tp : ownedPartitions) {
+                _consumer.commitSync(Collections.singletonMap(tp, new OffsetAndMetadata(_consumer.position(tp))));
+                LOGGER.info("Committed offset: " + _consumer.position(tp) + " for partition: " + tp.partition());
             }
+
             _consumer.close();
         }
     }
@@ -120,6 +101,14 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
     public void stop() {
         _isRunning = false;
         _consumer.wakeup();
+    }
+
+    public Map<MetricName, ? extends Metric> getMetrics() {
+        return _consumer.metrics();
+    }
+
+    public double getAverageEndToEndLatency() {
+        return _sumEndToEndLatency == 0 ? 0d : _sumEndToEndLatency / (_sumLatencyRecordsRead * 1.0);
     }
 
     @Override
@@ -152,23 +141,6 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
         if(exception != null) {
             LOGGER.error("An error occurred during commit.", exception);
         }
-        else if (_totalRecordsRead > 0) {
-            int numRecordsCommitted = 0;
-            for(Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
-                numRecordsCommitted += entry.getValue().offset() - _partitionOffsets.put(entry.getKey(), entry.getValue().offset());
-            }
-            _totalRecordsCommitted += numRecordsCommitted;
-            printUpdate(numRecordsCommitted);
-            _recordsReadBeforeCommit = 0;
-            _start = Instant.now();
-        }
-    }
-
-    private void printUpdate(int numRecordsCommitted) {
-        //double ellapsedMillis = Instant.now().toEpochMilli() - _start.toEpochMilli() * 1.0;
-        //LOGGER.info("Total Records Committed: " + _totalRecordsCommitted + ". Avg read end-to-end latency: " + _totalEndToEndLatency / _totalRecordsRead + " ms. Read records/sec: " + String.format("%.2f", _recordsReadBeforeCommit / ellapsedMillis * 1000) + ". Committed records/sec: " + String.format("%.2f", numRecordsCommitted / ellapsedMillis * 1000) + ".");
-        ConsumerMetric consumerMetric = new ConsumerMetric(Thread.currentThread().threadId(), _totalRecordsRead, _totalRecordsCommitted, numRecordsCommitted, _recordsReadBeforeCommit, _totalEndToEndLatency, Duration.between(_start, Instant.now()));
-        _consumerMetrics.add(consumerMetric);
     }
 
     private Consumer<String, SimpleEvent> createConsumer() {
