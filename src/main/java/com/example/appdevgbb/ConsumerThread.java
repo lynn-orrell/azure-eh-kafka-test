@@ -116,7 +116,7 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
         OffsetAndMetadata offset;
         for(TopicPartition tp : partitions) {
             offset = _consumer.committed(new HashSet<>(Collections.singletonList(tp))).get(tp);
-            LOGGER.info("Revoked Partition on Topic: " + tp.topic() + " - Partition: " + tp.partition() + " - Last Committed Offset: " + offset == null ? "UNKNOWN" : offset.offset());
+            LOGGER.info("Revoked Partition on Topic: " + tp.topic() + " - Partition: " + tp.partition() + " - Last Committed Offset: " + (offset == null ? "UNKNOWN" : Long.toString(offset.offset())));
         }
     }
 
