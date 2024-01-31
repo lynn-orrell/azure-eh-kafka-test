@@ -16,6 +16,7 @@ public class Producer {
     private final static int NUM_PRODUCER_THREADS = System.getenv("NUM_PRODUCER_THREADS") == null ? 1 : Integer.parseInt(System.getenv("NUM_PRODUCER_THREADS"));
     private final static int MESSAGE_SIZE_IN_BYTES = System.getenv("MESSAGE_SIZE_IN_BYTES") == null ? 1024 : Integer.parseInt(System.getenv("MESSAGE_SIZE_IN_BYTES"));
     private final static int TARGET_RECORDS_PER_SECOND = System.getenv("TARGET_RECORDS_PER_SECOND") == null ? 1000000 : Integer.parseInt(System.getenv("TARGET_RECORDS_PER_SECOND"));
+    private final static int LINGER_MS = System.getenv("LINGER_MS") == null ? 0 : Integer.parseInt(System.getenv("LINGER_MS"));
 
     private List<ProducerThread> _producerThreads;
     private ProducerMetricsThread _producerMetricsThread;
@@ -74,7 +75,7 @@ public class Producer {
         try {
             //props.setProperty(ProducerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
             props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("BOOTSTRAP_SERVER"));
-            props.setProperty(ProducerConfig.LINGER_MS_CONFIG, "1");
+            props.setProperty(ProducerConfig.LINGER_MS_CONFIG, String.valueOf(LINGER_MS));
             props.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(MESSAGE_SIZE_IN_BYTES * 400));
             props.setProperty("security.protocol", "SASL_SSL");
             props.setProperty("sasl.mechanism", "PLAIN");

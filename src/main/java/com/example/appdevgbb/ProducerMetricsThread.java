@@ -75,7 +75,7 @@ public class ProducerMetricsThread {
             totalRequestLatencyAverage += getRequestLatencyAverage(metrics);
         }
 
-        LOGGER.info("request-latency-average:     " + String.format("%.2f", totalRequestLatencyAverage));
+        LOGGER.info("request-latency-average (pt):     " + String.format("%.2f", totalRequestLatencyAverage / _producerThreads.size()));
     }
 
     private double getRecordSendTotal(Map<MetricName, ? extends org.apache.kafka.common.Metric> metrics) {
