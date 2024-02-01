@@ -49,6 +49,7 @@ public class ConsumerMetricsThread {
         double recordsConsumedTotal = 0;
         double recordsConsumedRate = 0;
         double averageEndToEndLatency = 0;
+        double averageLogAppendLatency = 0;
         double recordsPerRequestAverage = 0;
         double fetchLatencyAverage = 0;
         double fetchRate = 0;
@@ -58,6 +59,7 @@ public class ConsumerMetricsThread {
             recordsConsumedTotal += getRecordsConsumedTotal(metrics);
             recordsConsumedRate += getRecordsConsumedRate(metrics);
             averageEndToEndLatency += consumerThread.getAverageEndToEndLatency();
+            averageLogAppendLatency += consumerThread.getAverageLogAppendLatency();
             recordsPerRequestAverage += getRecordsPerRequestAverage(metrics);
             fetchLatencyAverage += getFetchLatencyAverage(metrics);
             fetchRate += getFetchRate(metrics);
@@ -67,6 +69,7 @@ public class ConsumerMetricsThread {
         LOGGER.info("records-consumed-total:       " + (long)recordsConsumedTotal);
         LOGGER.info("records-consumed-rate:        " + String.format("%.2f", recordsConsumedRate));
         LOGGER.info("end-to-end-latency (pt):      " + String.format("%.2f", averageEndToEndLatency / _consumerThreads.size()));
+        LOGGER.info("log-append-latency (pt):      " + String.format("%.2f", averageLogAppendLatency / _consumerThreads.size()));
         LOGGER.info("records-per-request-avg (pt): " + String.format("%.2f", recordsPerRequestAverage / _consumerThreads.size()));
         LOGGER.info("fetch-latency-avg (pt):       " + String.format("%.2f", fetchLatencyAverage / _consumerThreads.size()));
         LOGGER.info("fetch-rate (pt):              " + String.format("%.2f", fetchRate / _consumerThreads.size()));

@@ -41,6 +41,7 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
     private Map<TopicPartition, Long> _partitionOffsets;
     private long _sumLatencyRecordsRead;
     private long _sumEndToEndLatency;
+    private long _sumLogAppendLatency;
 
     public ConsumerThread(String topicName, int numRecordsToReadBeforeCommit, boolean shouldStartFromEnd, Properties consumerConfigProps) {
         _topicName = topicName;
@@ -70,6 +71,7 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
                     consumerRecord.partition();
                     if(simpleEvent != null) {
                         _sumEndToEndLatency += Instant.now().toEpochMilli() - simpleEvent.get_createDate().toEpochMilli();
+                        _sumLogAppendLatency += Instant.now().toEpochMilli() - consumerRecord.timestamp();
                         _sumLatencyRecordsRead++;
                     }
                     if (_numRecordsToReadBeforeCommit > 0 && (_sumLatencyRecordsRead > 0 && _sumLatencyRecordsRead % _numRecordsToReadBeforeCommit == 0)) {
@@ -109,6 +111,10 @@ public class ConsumerThread implements Runnable, ConsumerRebalanceListener, Offs
 
     public double getAverageEndToEndLatency() {
         return _sumEndToEndLatency == 0 ? 0d : _sumEndToEndLatency / (_sumLatencyRecordsRead * 1.0);
+    }
+
+    public double getAverageLogAppendLatency() {
+        return _sumLogAppendLatency == 0 ? 0d : _sumLogAppendLatency / (_sumLatencyRecordsRead * 1.0);
     }
 
     @Override
